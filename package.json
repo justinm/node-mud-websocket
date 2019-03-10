@@ -1,0 +1,20 @@
+{
+  "dependencies": {
+    "@babel/cli": "^7.2.3",
+    "@babel/core": "^7.3.4",
+    "@babel/node": "^7.2.2",
+    "@babel/preset-env": "^7.3.4",
+    "blessed": "^0.1.81",
+    "blessed-contrib": "^4.8.11",
+    "ws": "^6.2.0"
+  },
+  "scripts": {
+    "start": "./node_modules/.bin/babel-node src/server.js"
+  },
+  "name": "mud-relay",
+  "version": "1.0.0",
+  "main": "src/servers.js",
+  "license": "MIT",
+  "description": "A relay for connecting browsers to MUDs.",
+  "author": "Justin McCormick <me@justinmccormick.com>"
+}
