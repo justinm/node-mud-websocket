@@ -1,7 +1,7 @@
 import {Socket} from 'net';
 import {EventEmitter} from 'events';
 
-const COMMANDS = {
+export const COMMANDS = {
   SE:   240, // end of subnegotiation parameters
   NOP:  241, // no operation
   DM:   242, // data mark
@@ -20,7 +20,7 @@ const COMMANDS = {
   IAC:  255  // interpret as command
 };
 
-const OPTIONS = {
+export const OPTIONS = {
   TRANSMIT_BINARY: 0,         // http://tools.ietf.org/html/rfc856
   ECHO: 1,                    // http://tools.ietf.org/html/rfc857
   RECONNECT: 2,               // http://tools.ietf.org/html/rfc671
@@ -127,24 +127,10 @@ class Telnet extends EventEmitter {
         if (err)
           return reject(err);
 
-        // this.negotiate();
-
         this._socket.on('data', this.onSocketData.bind(this));
         this._socket.on('close', this.onSocketClose.bind(this));
 
         resolve();
-      });
-    });
-  }
-
-  negotiate() {
-    ['DO', 'DONT', 'WILL', 'WONT'].forEach((commandName) => {
-      this._commands[commandName.toLowerCase()] = {};
-
-      Object.keys(OPTIONS).forEach((optionName) => {
-        const optionCode = OPTIONS[optionName];
-        this._commands[commandName.toLowerCase()][optionName.toLowerCase()] = function() {
-        }
       });
     });
   }
@@ -155,127 +141,71 @@ class Telnet extends EventEmitter {
   }
 
   onSocketData(data) {
-    var bufs = []
-        , i = 0
-        , l = 0
-        , needsPush = false
-        , cdata
-        , iacCode
-        , iacName
-        , commandCode
-        , commandName
-        , optionCode
-        , optionName
-        , cmd
-        , len;
+    let offset = -1;
 
+    console.log('onSocketData');
     if (this._last) {
+      console.log('Last is', this._last.length);
       data = Buffer.concat([this._last.data, data]);
-      i = this._last.i;
-      l = this._last.l;
+      offset = this._last.offset;
       delete this._last;
+    } else {
+      offset = data.indexOf(COMMANDS.IAC);
     }
 
-    for (; i < data.length; i++) {
-      if (data.length - 1 - i >= 2
-          && data[i] === COMMANDS.IAC) {
-        cdata = data.slice(i);
-
-        iacCode = cdata.readUInt8(0);
-        iacName = COMMAND_NAMES[iacCode];
-        commandCode = cdata.readUInt8(1);
-        commandName = COMMAND_NAMES[commandCode];
-        optionCode = cdata.readUInt8(2);
-        optionName = OPTION_NAMES[optionCode];
-
-        cmd = {
-          iacCode: iacCode,
-          iacName: iacName,
-          commandCode: commandCode,
-          commandName: commandName,
-          optionCode: optionCode,
-          optionName: optionName,
-          data: cdata
-        };
-
-        // compat
-        if (cmd.option === 'new environ') {
-          cmd.option = 'environment variables';
-        } else if (cmd.option === 'naws') {
-          cmd.option = 'window size';
-        }
-
-        if (this[cmd.optionName]) {
-          try {
-            len = this[cmd.optionName](cmd);
-          } catch (e) {
-            if (!(e instanceof RangeError)) {
-              this.debug('error: %s', e.message);
-              this.emit('error', e);
-              return;
-            }
-            len = -1;
-            this.debug('Not enough data to parse.');
-          }
-        } else {
-          if (cmd.commandCode === COMMANDS.SB) {
-            len = 0;
-            while (cdata[len] && cdata[len] !== COMMANDS.SE) {
-              len++;
-            }
-            if (!cdata[len]) {
-              len = 3;
-            } else {
-              len++;
-            }
-          } else {
-            len = 3;
-          }
-          cmd.data = cmd.data.slice(0, len);
-          this.debug('Unknown option: %s', cmd.optionName, cmd);
-        }
-
-        if (len === -1) {
-          this.debug('Waiting for more data.');
-          this.debug(iacName, commandName, optionName, cmd.values || len);
-          this._last = {
-            data: data,
-            i: i,
-            l: l
-          };
-          return;
-        }
-
-        this.debug(iacName, commandName, optionName, cmd.values || len);
-
-        this.emit('command', cmd);
-
-        needsPush = true;
-        l = i + len;
-        i += len - 1;
-      } else {
-        if (data[i] === COMMANDS.IAC && data.length - 1 - i < 2) {
-          this.debug('Waiting for more data.');
-          this._last = {
-            data: data.slice(i),
-            i: 0,
-            l: 0
-          };
-          if (i > l) {
-            this.emit('data', data.slice(l, i));
-          }
-          return;
-        }
-        if (needsPush || i === data.length - 1) {
-          bufs.push(data.slice(l, i + 1));
-          needsPush = false;
-        }
+    if (offset !== -1)
+    do {
+      // Check if we have at least 3 bytes of data, if not we need to wait for the next round of data
+      if (data.length <  offset + 3) {
+        this._last = { data, offset };
+        console.log('Not enough data');
+        return;
       }
-    }
 
-    if (bufs.length) {
-      this.emit('data', Buffer.concat(bufs));
-    }
+      let end;
+      const buf = data.slice(offset);
+      const cmd = {
+        iac: buf.readUInt8(0),
+        command: buf.readUInt8(1),
+      }
+
+      if (cmd.command === COMMANDS.SB) {
+        end = buf.indexOf(COMMANDS.SE);
+
+        // We do not have enough data yet, try again next round
+        if (end === -1) {
+          this._last = { data, offset };
+          console.log('SB Not enough data');
+          return;
+        }
+
+        cmd.subcommand = buf.readUInt8(1);
+        cmd.data = buf.slice(2, end - 1);
+      } else {
+        cmd.option = buf.readUInt8(2);
+        end = 2;
+      }
+
+      let before;
+
+      if (!offset)
+        before = Buffer.alloc(0);
+      else
+        before = data.slice(0, offset - 1);
+
+      const after = buf.slice(end + 1);
+
+      data = Buffer.concat([before, after], before.length + after.length);
+
+      offset = data.indexOf(COMMANDS.IAC, offset);
+
+      console.log(offset, offset + end);
+
+      this.emit('command', cmd);
+    } while( offset !== -1 );
+
+    if (data.length)
+      this.emit('data', data);
   }
 
   async write(data) {
@@ -289,11 +219,19 @@ class Telnet extends EventEmitter {
   }
 
   will(option) {
-    return this.command('WILL', option);
+    return this.command(COMMANDS.WILL, option);
   }
 
   wont(option) {
-    return this.command('WONT', option);
+    return this.command(COMMANDS.WONT, option);
+  }
+
+  do(option) {
+    return this.command(COMMANDS.DO, option);
+  }
+
+  dont(option) {
+    return this.command(COMMANDS.DONT, option);
   }
 
   command(command, option) {

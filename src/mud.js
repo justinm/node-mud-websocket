@@ -1,4 +1,4 @@
-import Telnet from "./telnet"
+import Telnet, {COMMANDS, OPTIONS} from "./telnet"
 import {EventEmitter} from 'events';
 
 class Mud extends EventEmitter {
@@ -40,26 +40,27 @@ class Mud extends EventEmitter {
   }
 
   onCommand(cmd) {
-    if (cmd.commandName === 'DO') {
+    console.log(cmd);
+    if (cmd.command === COMMANDS.DO) {
       this._availableOptions.push(cmd.optionName || cmd.optionCode);
 
       // Support telnet suboptions
-      switch (cmd.optionCode) {
-        case 1: // ECHO
-          return this._telnet.command('do', cmd.optionCode);
+      switch (cmd.option) {
+        case OPTIONS.ECHO: // ECHO
+          return this._telnet.do(cmd.optionCode);
         case 201: // GMCP
-          console.log('Sending WILL', cmd.option);
-          return this._telnet.command('will', cmd.optionCode);
+          console.log('GMCP Active');
+          return this._telnet.will(cmd.optionCode);
         default:
-          return this._telnet.command('wont', cmd.optionCode);
+          return this._telnet.wont(cmd.optionCode);
       }
     }
 
 
 
-    if (cmd.commandName === 'WILL') {
+    if (cmd.command === COMMANDS.WILL) {
       switch (cmd.optionCode) {
-        case 1: // ECHO
+        case OPTIONS.ECHO: // ECHO
           return this._telnet.command('do', cmd.optionCode);
         default:
           return this._telnet.command('dont', cmd.optionCode);

@@ -36,6 +36,9 @@ class Parser {
     if (offset === -1)
       return text.toString();
 
+    text = this.replace(text, '<', '&lt');
+    text = this.replace(text, '>', '&gt');
+
     do {
       let end = text.indexOf('m', offset + 1, this._encoding);
 
@@ -73,9 +76,20 @@ class Parser {
 
     let output = text.toString();
 
-    // output = output.replace("\n", "<br/>");
-
     return output;
+  }
+
+  replace(buffer, string, replace) {
+    let offset = buffer.indexOf(string);
+    const replacement = Buffer.alloc(replace.length, replace);
+
+    do {
+      buffer = Buffer.concat([buffer.slice(0, offset), replacement, buffer.slice(offset + string.length)]);
+
+      offset = buffer.indexOf(string)
+    } while(offset !== -1);
+
+    return buffer;
   }
 }
 
