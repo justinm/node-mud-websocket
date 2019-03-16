@@ -31,16 +31,13 @@ class Parser {
     let offset = 0;
     let depth = [];
 
-    offset = text.indexOf(ESC, offset, this._encoding);
+    text = this.replace(text, '<', '&lt;');
+    text = this.replace(text, '>', '&gt;');
 
-    if (offset === -1)
-      return text.toString();
+    offset = text.indexOf(ESC, 0, this._encoding);
 
-    text = this.replace(text, '<', '&lt');
-    text = this.replace(text, '>', '&gt');
-
-    do {
-      let end = text.indexOf('m', offset + 1, this._encoding);
+    while (offset !== -1) {
+      let end = text.indexOf('m', offset, this._encoding);
 
       if (end !== -1) {
         const code = text.slice(offset + 2, end).toString(this._encoding);
@@ -52,10 +49,10 @@ class Parser {
 
           depth = [];
 
-          const data = Buffer.alloc(tags.length, tags);
+          const tagBuffer = Buffer.alloc(tags.length, tags);
 
-          text = Buffer.concat([before, data, after], before.length + data.length + after.length);
-          end = before.length + data.length;
+          text = Buffer.concat([before, tagBuffer, after], before.length + tagBuffer.length + after.length);
+          end = before.length + tagBuffer.length;
         } else
         if (COLORS[code]) {
           const span = new Buffer(`<span class="${COLORS[code]}">`);
@@ -65,14 +62,16 @@ class Parser {
           text = Buffer.concat([before, span, after], before.length + span.length + after.length);
           end = before.length + span.length;
         } else {
-          console.log('Unhandled escape code', code)
-          // We need to remove the escape
+          console.log('Dropping unknown code', code, 'at offset', offset);
           text = Buffer.concat([before, after]);
         }
+      } else {
+        console.log('Dropping at', offset, text.slice(offset + 1).toString());
+        text = Buffer.concat([text.slice(0, offset - 1), text.slice(offset + 1)]);
       }
 
       offset = text.indexOf(ESC, end, this._encoding);
-    } while(offset !== -1);
+    }
 
     let output = text.toString();
 
@@ -83,11 +82,11 @@ class Parser {
     let offset = buffer.indexOf(string);
     const replacement = Buffer.alloc(replace.length, replace);
 
-    do {
+    while(offset !== -1) {
       buffer = Buffer.concat([buffer.slice(0, offset), replacement, buffer.slice(offset + string.length)]);
 
       offset = buffer.indexOf(string)
-    } while(offset !== -1);
+    }
 
     return buffer;
   }

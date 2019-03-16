@@ -6,10 +6,11 @@
     "@babel/preset-env": "^7.3.4",
     "blessed": "^0.1.81",
     "blessed-contrib": "^4.8.11",
+    "nodemon": "^1.18.10",
     "ws": "^6.2.0"
   },
   "scripts": {
-    "start": "./node_modules/.bin/babel-node src/server.js"
+    "start": "./node_modules/.bin/nodemon -w src ./node_modules/.bin/babel-node src/server.js"
   },
   "name": "mud-relay",
   "version": "1.0.0",

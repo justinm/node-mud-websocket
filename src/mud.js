@@ -5,10 +5,16 @@ class Mud extends EventEmitter {
   constructor(addr, port) {
     super();
 
+    this._encoding = 'UTF-8';
     this._availableOptions = [];
     this._connected = false;
     this._addr = addr;
     this._port = port;
+
+    this._commands = {};
+    this._commands[COMMANDS.DO] = (cmd) => this._telnet.dont(cmd.option);
+    // this._commands[COMMANDS.WONT] = (cmd) => this._telnet.dont(cmd.option);
+    this._commands[COMMANDS.WILL] = (cmd) => this._telnet.wont(cmd.option);
   }
 
   async connect() {
@@ -23,53 +29,69 @@ class Mud extends EventEmitter {
     return this._telnet.connect().then(() => this._connected = true);
   }
 
-  write(data) {
+  async write(data) {
     if (!this._telnet)
-      throw new Error('not connected');
+      return;
 
-    this._telnet.write(data+"\n").then(() => {console.log('Data flushed')});
+    this._telnet.write(data+"\n");
   }
 
   close() {
     if (!this._telnet)
       return;
 
-    console.log('Close called');
     this._telnet.close();
     this._telnet = null;
   }
 
   onCommand(cmd) {
-    console.log(cmd);
+    if (cmd.command === COMMANDS.SB) {
+      if (cmd.subcommand === OPTIONS.GMCP) {
+        let data = cmd.data.toString();
+        let offset = data.indexOf(' ');
+        let key = data.substr(0, offset);
+        let value = data.substr(offset + 1);
+
+        try {
+          value = JSON.parse(value);
+        } catch (e) {
+          console.log(cmd.data.toString().split(' ', 2), '|', key, value, e)
+        }
+        this.emit('gmcp', { key, value });
+      }
+    }
+
+    if (cmd.command === COMMANDS.WONT && cmd.option === OPTIONS.ECHO) {
+      this.emit('echo', {disabled: false});
+      return this._telnet.will(cmd.option);
+    }
+
     if (cmd.command === COMMANDS.DO) {
-      this._availableOptions.push(cmd.optionName || cmd.optionCode);
+      this._availableOptions.push(cmd.option);
 
       // Support telnet suboptions
       switch (cmd.option) {
-        case OPTIONS.ECHO: // ECHO
-          return this._telnet.do(cmd.optionCode);
-        case 201: // GMCP
-          console.log('GMCP Active');
-          return this._telnet.will(cmd.optionCode);
-        default:
-          return this._telnet.wont(cmd.optionCode);
+        case OPTIONS.GMCP:
+              // return;
+          return this._telnet.will(cmd.option);
       }
     }
-
-
 
     if (cmd.command === COMMANDS.WILL) {
-      switch (cmd.optionCode) {
+      switch (cmd.option) {
         case OPTIONS.ECHO: // ECHO
-          return this._telnet.command('do', cmd.optionCode);
-        default:
-          return this._telnet.command('dont', cmd.optionCode);
+            this.emit('echo', {disabled: true});
+          return this._telnet.do(cmd.option);
+        case OPTIONS.GMCP:
+          return this._telnet.do(cmd.option);
       }
     }
+
+    if (this._commands[cmd.command])
+      this._commands[cmd.command](cmd);
   }
 
   onClose() {
-    console.log('MUD closed')
     this._telnet = null;
     this.emit('close');
   }

@@ -9,39 +9,71 @@ class Session {
 
     this._wss.on('close', this.onWssClose.bind(this));
     this._wss.on('message', (data) => this.onWssMessage(JSON.parse(data)));
+
+    this._started = false;
+    this._closeTimeout = null
+
+    this._mud.on('data', (data) => {
+      this.sendWss('text', {text: parser.parse(data)});
+    });
+
+    this._mud.on('close', () => {
+      console.log('Mud closed connection');
+      this.sendWss('connection', {status: 'closed'});
+      this._started = false;
+    });
+
+    this._mud.on('gmcp', (evt) => {
+      this.sendWss('gmcp', evt);
+    });
+
+    this._mud.on('echo', (evt) => {
+      this.sendWss('echo', evt);
+    });
+
   }
 
   start() {
-    this._mud.on('data', (data) => {
-      console.log('Received mud data:', data.toString());
-      this.sendWss({event: 'data', data: parser.parse(data)});
-    })
+    if (this._started)
+      return;
+
+    if (this._closeTimeout) {
+      clearTimeout(this._closeTimeout);
+      this._closeTimeout = null;
+    }
+
     this._mud.connect()
-        .then(() => this.sendWss({event: 'connection', status: 'success'}));
+        .then(() => this.sendWss('connection', {status: 'success'}));
+
+    this._started = true;
   }
 
-  sendWss(json) {
+  sendWss(type, json) {
     try {
-      this._wss.send(JSON.stringify(json))
+      this._wss.send(JSON.stringify({...json, type}))
     } catch (e) {
       console.log('Error sending data', e);
     }
   }
 
-  onWssMessage(data) {
-    switch(data.event) {
+  onWssMessage(event) {
+    switch(event.type) {
+      case 'connect':
+        console.log('connect event received');
+        return this.start();
       case 'input':
-        console.log('Received input', data.data)
-        return this._mud.write(data.data);
+        console.log('Received input', event.text)
+        return this._mud.write(event.text);
       default:
-        console.log('Received', data);
+        console.log('Received', event);
         break;
     }
 
   }
 
   onWssClose() {
-    this._mud.close();
+    console.log('Client disconnected, will close mud shortly');
+    this._closeTimeout = setTimeout(() => this._mud.close(), 5000);
   }
 
 }

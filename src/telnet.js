@@ -86,6 +86,7 @@ export const OPTIONS = {
   PRAGMA_LOGON: 138,          // https://google.com/search?q=telnet+option+PRAGMA_LOGON
   SSPI_LOGON: 139,            // https://google.com/search?q=telnet+option+SSPI_LOGON
   PRAGMA_HEARTBEAT: 140,      // https://google.com/search?q=telnet+option+PRAMGA_HEARTBEAT
+  GMCP: 201,
   EXOPL: 255                  // http://tools.ietf.org/html/rfc861
 };
 
@@ -101,13 +102,13 @@ const SUB = {
 
 const COMMAND_NAMES = Object.keys(COMMANDS).reduce(function(out, key) {
   const value = COMMANDS[key];
-  out[value] = key;
-  return out;
+  out[value] = key.toUpperCase();
+  return out;``
 }, {});
 
 const OPTION_NAMES = Object.keys(OPTIONS).reduce(function(out, key) {
   const value = OPTIONS[key];
-  out[value] = key.toLowerCase();
+  out[value] = key.toUpperCase();
   return out;
 }, {});
 
@@ -143,9 +144,7 @@ class Telnet extends EventEmitter {
   onSocketData(data) {
     let offset = -1;
 
-    console.log('onSocketData');
     if (this._last) {
-      console.log('Last is', this._last.length);
       data = Buffer.concat([this._last.data, data]);
       offset = this._last.offset;
       delete this._last;
@@ -153,12 +152,11 @@ class Telnet extends EventEmitter {
       offset = data.indexOf(COMMANDS.IAC);
     }
 
-    if (offset !== -1)
-    do {
-      // Check if we have at least 3 bytes of data, if not we need to wait for the next round of data
-      if (data.length <  offset + 3) {
+    while( offset !== -1 ) {
+      // Check if we have at least 2 bytes of data, if not we need to wait for the next round of data
+      if (data.length <  offset + 2) {
         this._last = { data, offset };
-        console.log('Not enough data');
+        this.debug('Not enough data yet for cmd ', data.readUInt8(offset), 'at offset', offset);
         return;
       }
 
@@ -175,15 +173,18 @@ class Telnet extends EventEmitter {
         // We do not have enough data yet, try again next round
         if (end === -1) {
           this._last = { data, offset };
-          console.log('SB Not enough data');
+          this.debug('SB Not enough data');
           return;
         }
 
-        cmd.subcommand = buf.readUInt8(1);
-        cmd.data = buf.slice(2, end - 1);
+        cmd.subcommand = buf.readUInt8(2);
+        cmd.data = buf.slice(3, end - 1)  ;
       } else {
-        cmd.option = buf.readUInt8(2);
-        end = 2;
+        if (buf.length >= 3) {
+          cmd.option = buf.readUInt8(2);
+          end = 2;
+        } else
+          end = 1;
       }
 
       let before;
@@ -191,18 +192,18 @@ class Telnet extends EventEmitter {
       if (!offset)
         before = Buffer.alloc(0);
       else
-        before = data.slice(0, offset - 1);
+        before = data.slice(0, offset);
 
       const after = buf.slice(end + 1);
 
-      data = Buffer.concat([before, after], before.length + after.length);
+      this.debug('RECV', COMMAND_NAMES[cmd.command] || cmd.command, OPTION_NAMES[cmd.option] || cmd.option || cmd.subcommand);
 
-      offset = data.indexOf(COMMANDS.IAC, offset);
+      data = Buffer.concat([before, after]);
 
-      console.log(offset, offset + end);
+      offset = data.indexOf(COMMANDS.IAC, before.length);
 
       this.emit('command', cmd);
-    } while( offset !== -1 );
+    }
 
     if (data.length)
       this.emit('data', data);
@@ -237,13 +238,7 @@ class Telnet extends EventEmitter {
   command(command, option) {
     const buf = new Buffer(3);
 
-    console.log('Send command', command, OPTION_NAMES[option] || option);
-
-    if (typeof command === 'string')
-      command = COMMANDS[command.toUpperCase()];
-
-    if (typeof option === 'string')
-      option = OPTIONS[option.toUpperCase()];
+    this.debug('SENT', COMMAND_NAMES[command] || command, OPTION_NAMES[option] || option);
 
     buf[0] = COMMANDS.IAC;
     buf[1] = command;
@@ -254,6 +249,7 @@ class Telnet extends EventEmitter {
 
   close() {
     this._socket.destroy();
+    this._last = null;
   }
 
   debug() {
