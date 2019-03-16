@@ -253,7 +253,7 @@ class Telnet extends EventEmitter {
   }
 
   debug() {
-    // console.log.apply(this, arguments);
+    // console.log.a`pply(this, arguments);
   }
 
 }
