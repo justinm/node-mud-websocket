@@ -1,8 +1,8 @@
 import WebSocket from 'ws';
 import Session from "./session"
 
-const wss = new WebSocket.Server({ port: 4000 });
+const wss = new WebSocket.Server({ port: process.env.PORT });
 
 wss.on('connection', (socket) => {
-  new Session(socket, 'primaldarkness.com', '5006');
+  new Session(socket, process.env.MUD_ADDRESS, process.env.MUD_PORT);
 });
